@@ -1,3 +1,0 @@
-Target: -1126
-Solution: [-143, -475, -928, 204, 216]
-Check sum: True
