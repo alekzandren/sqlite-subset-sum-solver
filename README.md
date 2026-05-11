@@ -31,5 +31,6 @@ This solver handles 5,000 numbers with a precision of up to 10^99 each, using SQ
 - .gitignore: Configured to keep the repository clean from DB artifacts.
 
 ## How to Run
-`bash
+```bash
 python subset_sum_solver.pym-solver
+```
