@@ -1,21 +1,24 @@
-#  Advanced SQLite Subset Sum Solver (MITM Optimized)
-An academically rigorous Python implementation designed to solve the **Subset Sum Problem** using a hybrid approach: **Meet-in-the-Middle (MITM)** algorithm combined with **SQLite-backed state persistence**.
-By leveraging the **Horowitz-Sahni** strategy, this solver reduces computational complexity from $O(2^n)$ to $O(2^{n/2} \cdot \log 2^{n/2})$, allowing for the processing of significantly larger datasets that would traditionally exhaust system memory.
+# High-Precision SQLite Subset Sum Solver (FPTAS & MITM)
+An academically focused Python implementation designed to tackle the Subset Sum Problem with a focus on mathematical robustness, infinite precision, and algorithmic efficiency. This solver bridges the gap between theoretical NP-complete challenges and practical, high-scale engineering.
+
+---
+## Core Technologies & Standards
+- **Arbitrary Precision Arithmetic:** Utilizes the Python decimal module with **50-digit precision** to bypass the inherent "drift" and inaccuracies of **IEEE 754** floating-point calculations.
+- **Infinite-Scale Storage:** Employs a unique **String-Relational Mapping** in SQLite, using TEXT fields to store numeric states. This bypasses the standard **64-bit (INT64) integer limit**, allowing for the processing of astronomical values (e.g., $> 2^{63}-1$).
+- **Out-of-Core Processing:** Designed for RAM-constrained environments, offloading state spaces to an indexed SQLite engine to maintain stability during massive scale-ups.
 
 ---
 
-## Algorithmic Approach
-1. Meet-in-the-Middle (MITM)
-The solver partitions the dataset $S$ into $S_1, S_2$ of size $n/2$. This reduces the search space from $O(2^n)$ to $O(2^{n/2})$.
-- **Theoretical Complexity:** $O(2^{n/2} \cdot \log 2^{n/2})$
-- **Practical Constraint:** Performance is primarily bound by I/O throughput during the B-Tree indexing phase of the $S_1$ sub-sums.
-2. FPTAS (Approximation)
-For large-scale instances where an exact solution is computationally prohibitive, the engine implements a **Fully Polynomial-Time Approximation Scheme.**
-- **Trimming Logic:** Using a trimming parameter $\delta = \epsilon / 2n$, the solver collapses the state space by merging sub-sums within a $(1+\delta)$ proximity.
-- **Guarantee:** Returns a sum $V$ such that $(1-\epsilon) \cdot \text{Target} \leq V \leq \text{Target}$.
-3. Hybrid Storage Strategy
-- **In-Memory Mode (:memory:):** Default mode for $N \leq 45$, utilizing SQLite's internal speed while maintaining a relational interface.
-- **Out-of-Core Mode (Disk):** Designed for extreme $N$ or RAM-constrained environments, offloading the $S_1$ hash table to disk.
+## Algorithmic Innovations
+1. Fully Polynomial-Time Approximation Scheme (FPTAS)
+Beyond exact matching, the engine implements an approximation logic using **Trimming.**
+- **Trimming Logic:** For a given error parameter $\epsilon$, the solver applies a trimming factor $\delta = \epsilon / 2n$, merging sub-sums that fall within the $(1+\delta)$ proximity.
+- **Precision Guarantee:** The engine guarantees a solution $V$ such that $(1-\epsilon) \cdot \text{Target} \leq V \leq \text{Target}$.
+
+2. Meet-in-the-Middle (MITM) Optimization
+By partitioning the dataset into $N/2$ subsets, the solver achieves a radical complexity reduction:
+Theoretical Complexity: $O(2^{n/2} \cdot \log 2^{n/2})$.
+B-Tree Intersections: The intersection between the memory-resident second half and the disk-resident first half is performed via indexed SQL queries, ensuring $O(\log N)$ lookup performance.
 
 
 ---
@@ -37,10 +40,22 @@ Setup Environment:
 ---
 
 ## Usage
-The engine can be integrated into larger cybersecurity or cryptographic tools. To run the demonstration benchmark:
 ```bash
-python subset_sum_solver.py
+from subset_sum_solver import CoreEngine
+
+# Defaulting to :memory: for high-speed computation
+engine = CoreEngine(db_name=":memory:")
+
+# Supports massive integers and approximation
+numbers = [10**20, 10**20 + 1, 5, 10]
+target = 2 * (10**20) + 16
+
+# epsilon=0 for exact match, epsilon > 0 for FPTAS approximation
+result = engine.run_solve(numbers, target, epsilon=0.001)
+print(f"Verified Solution: {result}")
 ```
+
+---
 
 ## Example Implementation:
 ```bash
@@ -56,24 +71,22 @@ print(f"Subset found: {result}")
 
 ---
 
-## Rigorous Testing
-The project maintains high reliability through a comprehensive suite, covering:pytest
-- **MITM Intersection:** Validating correct matching between the disk-stored and memory-stored halves.
-- **Negative Integer Support:** Handling sets with mixed polarity.
-- **Edge Cases:** Empty sets, target zero, and unreachable targets.
-- **Performance Benchmarks:** Asserting logarithmic time complexity gains.
-Run the test suite:
+## Stress Testing & Validation
+The project includes a StressTests suite designed for "Precision Torture" and "Boundary Analysis":
+- **Massive Scale:** Validating $N=60$ datasets where traditional brute force is mathematically impossible.
+- **The "One Giant" Problem:** Handling targets composed of vastly different magnitudes (e.g., $10^{18}$ combined with $10^{-9}$) to ensure no loss of data in the low-order bits.
+- **Overflow Resistance:** Verifying values exceeding $2^{128}$ to ensure database integrity.
+
 ```bash
 pytest tests/
 ```
 
 ---
 
-## Project Structure
-- subset_sum_solver.py: Core algorithmic logic and SQLite orchestration.
-- tests/: Automated verification suite.
-- requirements.txt: Minimal dependencies (standard library focused).
-- storage_v3.db: Indexed relational storage (auto-generated).
+## Structure
+- subset_sum_solver.py: The core engine featuring Decimal arithmetic and _trim logic.
+- tests/stress_test.py: Validation against IEEE 754 errors and integer overflows.
+- requirements.txt: Minimal dependencies.
 
 ---
 
