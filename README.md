@@ -92,7 +92,7 @@ pytest tests/
 
 ## Structure
 - subset_sum_solver.py: Core logic featuring arithmetic and algorithms.Decimal_trim
-- tests/stress_test.py: Validation against IEEE 754 errors and integer overflows.
+- tests/test_core.py: Validation against IEEE 754 errors and integer overflows.
 - requirements.txt: Minimal dependency footprint.
 
 ---
