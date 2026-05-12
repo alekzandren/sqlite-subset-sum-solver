@@ -43,10 +43,10 @@ Run tests using :pytest
 ---
 
 ## Project Structure
-subset_sum_solver.py: The main solver logic and database orchestration.
-tests/: Unit tests for validating different sum scenarios.
-requirements.txt: Project dependencies.
-storage_v2.db: Local SQLite database (auto-generated).
+- subset_sum_solver.py: The main solver logic and database orchestration.
+- tests/: Unit tests for validating different sum scenarios.
+- requirements.txt: Project dependencies.
+- storage_v2.db: Local SQLite database (auto-generated).
 
 ---
 
