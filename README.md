@@ -63,10 +63,10 @@ pytest tests/
 ---
 
 ## Project Structure
-subset_sum_solver.py: Core algorithmic logic and SQLite orchestration.
-tests/: Automated verification suite.
-requirements.txt: Minimal dependencies (standard library focused).
-storage_v3.db: Indexed relational storage (auto-generated).
+- subset_sum_solver.py: Core algorithmic logic and SQLite orchestration.
+- tests/: Automated verification suite.
+- requirements.txt: Minimal dependencies (standard library focused).
+- storage_v3.db: Indexed relational storage (auto-generated).
 
 ---
 
