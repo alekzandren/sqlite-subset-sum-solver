@@ -1,86 +1,74 @@
-# Persistent High-Precision Subset Sum Solver
-A specialized research framework for the Subset Sum Problem, optimized for fault-tolerant computation and memory-constrained environments. This project bridges the gap between theoretical NP-complete complexity and resilient, verifiable engineering by utilizing a hybrid out-of-core processing model.
+# Optimized Meet-in-the-Middle Subset Sum Solver
+An academic-grade Python implementation of the Subset Sum Problem (SSP), transitioning from brute-force $O(2^n)$ to an optimized Meet-in-the-Middle (MITM) architecture. This solver is designed for high-precision computational research, ensuring $O(2^{n/2} \cdot \log 2^{n/2})$ complexity while maintaining absolute numerical integrity.
 
 ---
 
-##  Engineering Philosophy & Design
-Unlike standard in-memory solvers, this engine implements a "Disk-as-a-Swap" architecture, utilizing SQLite as a robust extension of the system's address space.
+##  Theoretical Framework & Methodology
+The solver addresses the NP-complete nature of the Subset Sum Problem by focusing on algorithmic efficiency and state-space management.
 
-1. Why SQLite? (Persistence over Latency)
-In MITM algorithms, the exponential growth of sub-sums often leads to a MemoryError.
-- **Overcoming RAM Limits:** When the state space ($2^{n/2}$) exceeds physical memory, the engine flushes states to an indexed database. This allows the solver to complete tasks on hardware that would otherwise fail.
-- **Atomic Warm-Start Recovery:** A dual-table commit strategy tracks the last_processed_idx. If the process is terminated (SIGKILL) or the system loses power, the solver resumes from the exact point of failure rather than restarting hours of computation.
-- **Zero-Dependency Portability:** SQLite was chosen over Redis/NoSQL to ensure the framework runs on high-performance computing (HPC) clusters without requiring administrative service installations.
+1. Algorithmic Complexity
+- **Time Complexity:** The engine achieves $O(2^{n/2} \cdot \log 2^{n/2})$ through a dual-phase execution:
+- **Generation:** Sub-sum spaces for two partitions are generated in $O(2^{n/2})$.
+- **Intersection:** Lookups are optimized using Hash Maps for $O(1)$ average-case access and the bisect module for $O(\log N)$ binary search across sorted state spaces.
+- **Space Complexity:** $O(2^{n/2})$ to store the primary state space.
 
-2. Numerical Robustness (Beyond IEEE 754)
-- **Arbitrary Precision:** Utilizing the decimal module with 50-digit precision eliminates the bit-drift and accumulation errors inherent in standard floating-point types.
-- **String-Relational Mapping:** Numeric values are stored as TEXT in the database. This bypasses the 64-bit integer limit (INT64), enabling the processing of astronomical values (e.g., $> 2^{256}$) while maintaining B-Tree searchability.
-
----
-
-## Algorithmic Stack
-**Meet-in-the-Middle (MITM) Optimization**
-The solver partitions the dataset into two subsets, reducing computational complexity from $O(2^n)$ to $O(2^{n/2} \cdot \log 2^{n/2})$. Intersection lookups are performed via optimized SQL Range Queries (BETWEEN), leveraging disk-resident indexes for memory efficiency.
-
-**FPTAS (Approximation Scheme)**
-For extreme-scale instances ($N > 60$), a Fully Polynomial-Time Approximation Scheme is provided.
-- **Trimming Logic:** The state space is compressed using a trimming factor $\delta = \epsilon / 2n$.
-- **Quantifiable Error:** High-precision arithmetic allows for a verifiable guarantee that the result $V$ satisfies: $(1-\epsilon) \cdot \text{Target} \leq V \leq \text{Target}$.
+2. Numerical Integrity
+- **Arbitrary-Precision Arithmetic:** Unlike standard floating-point implementations susceptible to IEEE 754 bit-drift, this solver utilizes Python’s native arbitrary-precision integers. This ensures 100% accuracy for cryptographic-scale integers ($> 2^{256}$).
+- **Rational Scaling:** For fractional datasets, the framework is designed to utilize fractions.Fraction or integer scaling to maintain absolute precision without the overhead of decimal context where it's not mathematically required.
 
 ---
 
-## Benchmarking & Constraints
-- **N < 35:** Pure RAM-based Python sets are significantly faster due to zero I/O overhead.
-- **N > 45:** The hybrid model becomes viable as the state space begins to compete with the L3 cache and system swap.
-- **The Trade-off:** This is a Reliability-First framework. It prioritizes the completion and verifiability of a task over raw execution speed in low-resource environments.
+## Core Features
+**Hybrid Search Engine**
+The solver bridges the gap between raw speed and memory management:
+- **In-Memory MITM:** Optimized for $N \approx 30-45$ using Python’s highly optimized dictionary lookups.
+- **Persistence Layer (Optional):** A diagnostic SQLite interface is available for Out-of-Core processing, allowing state-space tracking and atomic recovery (Checkpointing) for long-running research tasks on memory-constrained hardware.
 
+**Approximation (FPTAS)**
+For instances where $N > 60$, the engine implements a Fully Polynomial-Time Approximation Scheme:
+- **Trimming Logic:** Reduces the state space by merging sums within a relative proximity factor $\delta = \epsilon / 2n$.
+- **Quantifiable Error:** Guarantees a solution $V$ such that $(1-\epsilon) \cdot \text{Target} \leq V \leq \text{Target}$.
 
 ---
 
-## Installation & Usage
+## Installation & Developer Setup
+This project follows professional Python standards with strict separation of concerns.
 ```bash
-git clone https://github.com/alekzandren/sqlite-subset-sum-solver.git
-cd sqlite-subset-sum-solver
+git clone https://github.com/alekzandren/subset-sum-solver.git
+cd subset-sum-solver
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-**Basic Usage:**
+**Development Dependencies:**
+For linting, type checking, and testing, install the development suite:
 ```bash
-from subset_sum_solver import CoreEngine
-
-# The DB file acts as a persistent checkpoint
-engine = CoreEngine(db_name="research_checkpoint.db")
-
-numbers = [10**25, 10**25 + 7, 15, 22]
-target = 2 * (10**25) + 37
-
-# epsilon=0 for exact match, epsilon > 0 for FPTAS
-result = engine.run_solve(numbers, target, epsilon=0.001)
-print(f"Verified Solution: {result}")
+pip install -r requirements-dev.txt
 ```
 
 ---
 
-## Stress Testing
-The included StressTests suite validates:
-- **Precision Torture:** Handling targets spanning magnitudes of $10^{18}$ and $10^{-9}$ simultaneously.
-- **Atomic Recovery:** Integrity checks after simulated process crashes.
-- **Overflow Resistance:** Validation of values exceeding $2^{128}$.
-
+## Validation & Benchmarking
+The solver includes a rigorous test suite focusing on boundary conditions and computational limits:
+- **Massive Magnitude Tests:** Validation of sets with values exceeding $10^{30}$.
+- **Zero-Sum & Negative Constraints:** Handling edge cases in discrete optimization.
+- **Complexity Benchmarks:** Automated scripts to verify the $O(2^{n/2})$ growth curve.
 ```bash
+# Run the test suite
 pytest tests/
+
+# Run static type checking
+mypy subset_sum_solver.py
 ```
 
 ---
 
 ## Project Structure
-- subset_sum_solver.py: Core engine featuring atomic checkpoints and MITM logic.
-- tests/: Boundary analysis and precision validation.
-- requirements.txt: Minimal dependency footprint.
+- subset_sum_solver.py: Core logic featuring type-hinted MITM and FPTAS implementations.
+- test_core.py: Performance analysis scripts for complexity verification.
+- requirements.txt: Zero external dependencies for the core solver.
+- requirements-dev.txt: Suite for pytest, mypy, and black.
 
----
 
-## License & Disclaimer
-This project is licensed under the MIT License. It is intended for academic research in **Computational Complexity** and **Information Security.** The use of SQLite is a deliberate architectural trade-off favoring **verifiability** and **persistence** over raw execution speed.
-
+## License & Research Disclaimer
+This project is licensed under the MIT License. It is designed as a reference implementation for **Computational Complexity** research. While optimized for Python, extreme-scale instances may require migration to low-level implementations (C++/Rust) using the same MITM principles provided here.
