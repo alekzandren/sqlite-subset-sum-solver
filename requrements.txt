@@ -1,2 +1,1 @@
-pytest==8.1.1
-black==24.4.2
+# Only core logic dependencies (none for standard MITM)
