@@ -2,130 +2,115 @@ import sqlite3
 import random
 import time
 import logging
-from typing import List, Optional, Set
+from typing import List, Optional, Dict
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
 
 class CoreEngine:
-    def __init__(self, db_name="storage_v3.db"):
-        self.db_name = db_name
+    def __init__(self, db_name=":memory:"):
         self.conn = sqlite3.connect(db_name)
         self.conn.execute("PRAGMA journal_mode=WAL;")
         self.conn.execute("PRAGMA synchronous=OFF;")
-        self.conn.execute("PRAGMA cache_size=-64000;")  # 64MB Cache
         self.cursor = self.conn.cursor()
         self._setup_db()
 
     def _setup_db(self):
         self.cursor.execute("DROP TABLE IF EXISTS left_sums")
         self.cursor.execute('''CREATE TABLE left_sums 
-                               (s_val INTEGER PRIMARY KEY, n_val INTEGER)''')
+                               (s_val REAL PRIMARY KEY, n_val REAL)''')
         self.conn.commit()
 
-    def _generate_subset_sums(self, nums: List[int], epsilon: float = 0.0) -> dict:
+    def _trim(self, sums: Dict[float, float], delta: float) -> Dict[float, float]:
         """
-        Generates subset sums with optional Epsilon-pruning (FPTAS logic).
+        Real FPTAS trimming logic.
+        Reduces the number of sums by merging those that are close to each other.
         """
-        sums = {0: 0}
-        for num in nums:
-            new_sums = {}
-            for s_val in sums:
-                new_s = s_val + num
-                new_sums[new_s] = num
-            sums.update(new_sums)
-        return sums
+        sorted_keys = sorted(sums.keys())
+        if not sorted_keys: return {0: 0}
 
-    def run_solve(self, numbers: List[int], target: int, epsilon: float = 0.001):
+        trimmed = {0: 0}
+        last_kept = sorted_keys[0]
+        for s in sorted_keys:
+            if s > last_kept * (1 + delta):
+                trimmed[s] = sums[s]
+                last_kept = s
+        return trimmed
+
+    def run_solve(self, numbers: List[int], target: int, epsilon: float = 0.0):
         """
-        Solves Subset Sum using Meet-in-the-Middle and SQLite indexing.
-        Complexity: O(2^(n/2) * log(2^(n/2)))
+        MITM Solver with optional FPTAS trimming.
         """
-        self._setup_db()
         n = len(numbers)
         mid = n // 2
         left_part = numbers[:mid]
         right_part = numbers[mid:]
 
-        logger.info(f"Execution started. Strategy: Meet-in-the-Middle. Target: {target}")
+        delta = epsilon / (2 * n) if epsilon > 0 else 0
 
-        logger.info(f"Processing Left Half (N={len(left_part)})...")
-        left_sums = self._generate_subset_sums(left_part)
+        logger.info(f"Solving with MITM. Epsilon: {epsilon} (Delta: {delta})")
+
+        left_sums = {0: 0}
+        for num in left_part:
+            new_sums = {s + num: num for s in left_sums}
+            left_sums.update(new_sums)
+            if delta > 0:
+                left_sums = self._trim(left_sums, delta)
 
         self.cursor.execute("BEGIN TRANSACTION")
-        batch = [(s, n) for s, n in left_sums.items()]
-        self.cursor.executemany("INSERT OR IGNORE INTO left_sums VALUES (?, ?)", batch)
+        self.cursor.executemany("INSERT OR IGNORE INTO left_sums VALUES (?, ?)",
+                                list(left_sums.items()))
         self.conn.commit()
-        logger.info(f"Left Half indexed in DB. Unique sums: {len(left_sums)}")
 
-        logger.info(f"Processing Right Half (N={len(right_part)}) and querying...")
-
-        current_right_sums = {0: 0}
+        right_sums = {0: 0}
         for num in right_part:
-            new_right_sums = {}
-            for rs in current_right_sums:
-                combined_rs = rs + num
+            new_right = {}
+            for rs in right_sums:
+                curr_rs = rs + num
 
-                needed = target - combined_rs
-                self.cursor.execute("SELECT n_val FROM left_sums WHERE s_val = ?", (needed,))
-                res = self.cursor.fetchone()
+                if epsilon == 0:
+                    self.cursor.execute("SELECT n_val FROM left_sums WHERE s_val = ?", (target - curr_rs,))
+                else:
+                    # Range search for FPTAS
+                    lower = (target - curr_rs) / (1 + epsilon)
+                    upper = (target - curr_rs)
+                    self.cursor.execute("SELECT s_val, n_val FROM left_sums WHERE s_val BETWEEN ? AND ?",
+                                        (lower, upper))
 
-                if res is not None:
-                    logger.info("Intersection found!")
-                    path_left = self._get_db_path(needed)
-                    path_right = self._reconstruct_mem_path(current_right_sums, rs) + [num]
+                match = self.cursor.fetchone()
+                if match:
+                    # Match found
+                    matched_s = match[0] if epsilon > 0 else (target - curr_rs)
+                    path_left = self._get_db_path(matched_s)
+                    path_right = self._reconstruct_mem_path(right_sums, rs) + [num]
                     return path_left + path_right
 
-                new_right_sums[combined_rs] = num
-            current_right_sums.update(new_right_sums)
+                new_right[curr_rs] = num
+            right_sums.update(new_right)
+            if delta > 0:
+                right_sums = self._trim(right_sums, delta)
 
         return None
 
-    def _get_db_path(self, target: int) -> List[int]:
+    def _get_db_path(self, target: float) -> List[float]:
         path = []
         curr = target
-        while curr != 0:
+        while curr > 1e-9:
             self.cursor.execute("SELECT n_val FROM left_sums WHERE s_val=?", (curr,))
-            val = self.cursor.fetchone()[0]
+            res = self.cursor.fetchone()
+            if not res: break
+            val = res[0]
             path.append(val)
             curr -= val
         return path
 
-    def _reconstruct_mem_path(self, sums_dict: dict, end_val: int) -> List[int]:
+    def _reconstruct_mem_path(self, sums_dict: dict, end_val: float) -> List[float]:
         path = []
         curr = end_val
-        temp_curr = end_val
-        while temp_curr > 0:
-            val = sums_dict.get(temp_curr)
+        while curr > 1e-9:
+            val = sums_dict.get(curr)
             if val is None or val == 0: break
             path.append(val)
-            temp_curr -= val
+            curr -= val
         return path
-
-
-def execute_task():
-    engine = CoreEngine()
-
-    sample_size = 40
-    data_set = [random.randint(1, 1000) for _ in range(sample_size)]
-
-    sub_size = 6
-    goal_subset = random.sample(data_set, sub_size)
-    goal = sum(goal_subset)
-
-    start_time = time.time()
-    result = engine.run_solve(data_set, goal)
-
-    if result:
-        duration = time.time() - start_time
-        print(f"\n[!] SOLUTION FOUND in {duration:.4f} seconds.")
-        print(f"Target: {goal} | Result Sum: {sum(result)}")
-        print(f"Subset: {result}")
-        print(f"Verified: {sum(result) == goal}")
-    else:
-        print("\n[-] No exact solution found.")
-
-
-if __name__ == "__main__":
-    execute_task()
