@@ -28,7 +28,7 @@ A high-performance Python tool designed to solve the **Subset Sum Problem** usin
 ## Usage
 Run the main execution script to see the solver in action:
 ```bash
-           python core_engine.py
+           python subset_sum_solver.py
 ```
 
 ---
@@ -43,7 +43,7 @@ Run tests using :pytest
 ---
 
 ## Project Structure
-core_engine.py: The main solver logic and database orchestration.
+subset_sum_solver.py: The main solver logic and database orchestration.
 tests/: Unit tests for validating different sum scenarios.
 requirements.txt: Project dependencies.
 storage_v2.db: Local SQLite database (auto-generated).
