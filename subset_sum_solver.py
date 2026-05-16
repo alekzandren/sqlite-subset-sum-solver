@@ -1,22 +1,27 @@
-import bisect
-from array import array
-from typing import List, Optional, Tuple, Dict
-
+import sqlite3
+import os
+from typing import List, Optional
 
 class SubsetSumSolver:
-    """
-    Academic-grade solver providing both Exact (Meet-in-the-Middle) and
-    Approximate (FPTAS) optimized solutions for the Subset Sum Problem.
-    """
+    def __init__(self, db_path: str = "subset_sum.db"):
+        self.db_path = db_path
+        self._init_db()
+
+    def _init_db(self) -> None:
+        if os.path.exists(self.db_path):
+            os.remove(self.db_path)
+            
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS left_space (
+                    sum_value INTEGER PRIMARY KEY,
+                    path_json TEXT
+                )
+            """)
+            conn.commit()
 
     def solve_exact(self, nums: List[int], target: int) -> Optional[List[int]]:
-        """
-        Executes the Meet-in-the-Middle (MITM) algorithm.
-        Splits the search space in half to break the O(2^n) combinatorial explosion.
-
-        Time Complexity: O(2^{n/2} * log(2^{n/2}))
-        Space Complexity: O(2^{n/2}) using space-efficient native arrays.
-        """
         if not nums:
             return None if target != 0 else []
 
@@ -25,41 +30,32 @@ class SubsetSumSolver:
         left_half = nums[:mid]
         right_half = nums[mid:]
 
-        left_dict = self._generate_sum_map(left_half)
-        right_dict = self._generate_sum_map(right_half)
+        self._generate_left_space_to_db(left_half)
 
-        sorted_right_sums = sorted(right_dict.keys())
-        right_array = array('q', sorted_right_sums)
-
-        for l_sum, l_path in left_dict.items():
-            needed = target - l_sum
-            idx = bisect.bisect_left(right_array, needed)
-
-            if idx < len(right_array) and right_array[idx] == needed:
-                return list(l_path) + list(right_dict[needed])
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            
+            for r_sum, r_path in self._yield_right_space(right_half):
+                needed = target - r_sum
+                
+                cursor.execute("SELECT path_json FROM left_space WHERE sum_value = ?", (needed,))
+                row = cursor.fetchone()
+                
+                if row:
+                    left_path = eval(row[0])
+                    return list(left_path) + list(r_path)
 
         return None
 
     def solve_fptas(self, nums: List[int], target: int, epsilon: float) -> int:
-        """
-        Fully Polynomial-Time Approximation Scheme (FPTAS).
-
-        Guarantees that the returned subset sum is >= (1 - epsilon) * OPT.
-        Time Complexity: O(n^2 / epsilon)
-
-        Fixes the float precision vulnerability by avoiding direct float-to-int 
-        multiplication bounds during the trim cascade.
-        """
         if not nums or target <= 0:
             return 0
-
         valid_nums = [x for x in nums if x <= target]
         if not valid_nums:
             return 0
-
+            
         n = len(valid_nums)
         delta = epsilon / (2 * n)
-
         current_sums = [0]
 
         for x in valid_nums:
@@ -70,13 +66,7 @@ class SubsetSumSolver:
         return max(current_sums)
 
     def _trim_spectrum(self, sorted_list: List[int], delta: float) -> List[int]:
-        """
-        Trims the sorted list of sums to keep the state space bounded polynomially.
-        Uses exponential stepping intervals to preserve the approximation corridor.
-        """
-        if not sorted_list:
-            return []
-
+        if not sorted_list: return []
         trimmed = [sorted_list[0]]
         last_added = sorted_list[0]
 
@@ -89,15 +79,10 @@ class SubsetSumSolver:
             elif current > last_added * (1.0 + delta):
                 trimmed.append(current)
                 last_added = current
-
         return trimmed
 
-    def _generate_sum_map(self, items: List[int]) -> Dict[int, Tuple[int, ...]]:
-        """
-        Generates all achievable subset sums mapped to their respective exact paths.
-        Optimized via safe non-mutating hash-map generation cascades.
-        """
-        sums_map: Dict[int, Tuple[int, ...]] = {0: ()}
+    def _generate_left_space_to_db(self, items: List[int]) -> None:
+        sums_map = {0: ()}
         for x in items:
             new_entries = {}
             for current_sum, path in sums_map.items():
@@ -105,7 +90,33 @@ class SubsetSumSolver:
                 if next_sum not in sums_map:
                     new_entries[next_sum] = path + (x,)
             sums_map.update(new_entries)
-        return sums_map
+            
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            prepared_data = [(s, str(p)) for s, p in sums_map.items()]
+            cursor.executemany("INSERT OR IGNORE INTO left_space VALUES (?, ?)", prepared_data)
+            conn.commit()
+
+    def _yield_right_space(self, items: List[int]):
+        sums_map = {0: ()}
+        yield 0, ()
+        for x in items:
+            new_entries = {}
+            for current_sum, path in sums_map.items():
+                next_sum = current_sum + x
+                if next_sum not in sums_map:
+                    new_entries[next_sum] = path + (x,)
+                    yield next_sum, new_entries[next_sum]
+            sums_map.update(new_entries)
 
 if __name__ == "__main__":
     solver = SubsetSumSolver()
+    data_pool = [413, 222, 117, 92, 193, 209, 350, 13]
+    target_goal = 414
+
+    print("=== EXECUTING SQLITE SUBSET SUM SOLVER ===")
+    exact_res = solver.solve_exact(data_pool, target_goal)
+    print(f"Exact Solution: {exact_res} (Sum: {sum(exact_res) if exact_res else 0})")
+    
+    approx_val = solver.solve_fptas(data_pool, target_goal, epsilon=0.05)
+    print(f"FPTAS Approximation: {approx_val}")
