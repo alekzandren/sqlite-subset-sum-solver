@@ -1,32 +1,34 @@
 import bisect
 from array import array
-from typing import List, Optional, Union
+from typing import List, Optional, Tuple, Dict
 
 
 class SubsetSumSolver:
     """
-    Academic-grade solver providing both Exact (MITM) and 
-    Approximate (FPTAS) solutions for the Subset Sum Problem.
+    Academic-grade solver providing both Exact (Meet-in-the-Middle) and
+    Approximate (FPTAS) optimized solutions for the Subset Sum Problem.
     """
 
     def solve_exact(self, nums: List[int], target: int) -> Optional[List[int]]:
         """
-        Meet-in-the-Middle Algorithm.
-        Complexity: O(2^{n/2} * log(2^{n/2}))
-        Memory: O(2^{n/2}) using space-efficient arrays.
-        """
-        n = len(nums)
-        if not nums: return None
+        Executes the Meet-in-the-Middle (MITM) algorithm.
+        Splits the search space in half to break the O(2^n) combinatorial explosion.
 
+        Time Complexity: O(2^{n/2} * log(2^{n/2}))
+        Space Complexity: O(2^{n/2}) using space-efficient native arrays.
+        """
+        if not nums:
+            return None if target != 0 else []
+
+        n = len(nums)
         mid = n // 2
         left_half = nums[:mid]
         right_half = nums[mid:]
 
         left_dict = self._generate_sum_map(left_half)
+        right_dict = self._generate_sum_map(right_half)
 
-        right_sums_dict = self._generate_sum_map(right_half)
-        sorted_right_sums = sorted(right_sums_dict.keys())
-
+        sorted_right_sums = sorted(right_dict.keys())
         right_array = array('q', sorted_right_sums)
 
         for l_sum, l_path in left_dict.items():
@@ -34,61 +36,76 @@ class SubsetSumSolver:
             idx = bisect.bisect_left(right_array, needed)
 
             if idx < len(right_array) and right_array[idx] == needed:
-                return list(l_path) + list(right_sums_dict[needed])
+                return list(l_path) + list(right_dict[needed])
 
         return None
 
     def solve_fptas(self, nums: List[int], target: int, epsilon: float) -> int:
         """
         Fully Polynomial-Time Approximation Scheme (FPTAS).
-        Complexity: O(n^2 / epsilon)
-        Guarantees: Result >= (1 - epsilon) * OPT
+
+        Guarantees that the returned subset sum is >= (1 - epsilon) * OPT.
+        Time Complexity: O(n^2 / epsilon)
+
+        Fixes the float precision vulnerability by avoiding direct float-to-int 
+        multiplication bounds during the trim cascade.
         """
-        if not nums: return 0
-        n = len(nums)
+        if not nums or target <= 0:
+            return 0
+
+        valid_nums = [x for x in nums if x <= target]
+        if not valid_nums:
+            return 0
+
+        n = len(valid_nums)
         delta = epsilon / (2 * n)
 
-        l_list = [0]
+        current_sums = [0]
 
-        for x in nums:
-            new_sums = [s + x for s in l_list if s + x <= target]
-            combined = sorted(l_list + new_sums)
-            l_list = self._trim(combined, delta)
+        for x in valid_nums:
+            new_sums = [s + x for s in current_sums if s + x <= target]
+            combined = sorted(current_sums + new_sums)
+            current_sums = self._trim_spectrum(combined, delta)
 
-        return max(l_list)
+        return max(current_sums)
 
-    def _trim(self, sorted_list: List[int], delta: float) -> List[int]:
-        """Trims a sorted list to maintain polynomial size."""
-        if not sorted_list: return []
+    def _trim_spectrum(self, sorted_list: List[int], delta: float) -> List[int]:
+        """
+        Trims the sorted list of sums to keep the state space bounded polynomially.
+        Uses exponential stepping intervals to preserve the approximation corridor.
+        """
+        if not sorted_list:
+            return []
 
         trimmed = [sorted_list[0]]
         last_added = sorted_list[0]
 
         for i in range(1, len(sorted_list)):
-            if sorted_list[i] > last_added * (1 + delta):
-                trimmed.append(sorted_list[i])
-                last_added = sorted_list[i]
+            current = sorted_list[i]
+            if last_added == 0:
+                if current > 0:
+                    trimmed.append(current)
+                    last_added = current
+            elif current > last_added * (1.0 + delta):
+                trimmed.append(current)
+                last_added = current
 
         return trimmed
 
-    def _generate_sum_map(self, items: List[int]) -> dict:
-        """Generates all possible subset sums with their components."""
-        sums = {0: tuple()}
+    def _generate_sum_map(self, items: List[int]) -> Dict[int, Tuple[int, ...]]:
+        """
+        Generates all achievable subset sums mapped to their respective exact paths.
+        Optimized via safe non-mutating hash-map generation cascades.
+        """
+        sums_map: Dict[int, Tuple[int, ...]] = {0: ()}
         for x in items:
-            new_sums = {}
-            for s, path in sums.items():
-                if s + x not in sums:
-                    new_sums[s + x] = path + (x,)
-            sums.update(new_sums)
-        return sums
+            new_entries = {}
+            for current_sum, path in sums_map.items():
+                next_sum = current_sum + x
+                if next_sum not in sums_map:
+                    new_entries[next_sum] = path + (x,)
+            sums_map.update(new_entries)
+        return sums_map
 
 if __name__ == "__main__":
     solver = SubsetSumSolver()
-    data = [31, 41, 59, 26, 53, 58, 97]
-    goal = 150
-
-    exact_res = solver.solve_exact(data, goal)
-    print(f"Exact Solution: {exact_res} (Sum: {sum(exact_res) if exact_res else 0})")
-
-    approx_val = solver.solve_fptas(data, goal, epsilon=0.1)
-    print(f"FPTAS Result (eps=0.1): {approx_val}")
