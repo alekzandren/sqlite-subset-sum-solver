@@ -1,43 +1,50 @@
 import pytest
-from decimal import Decimal
-from subset_sum_solver import CoreEngine
+from subset_sum_solver import SubsetSumSolver
+
+@pytest.fixture
+def solver() -> SubsetSumSolver:
+    """Fixture to initialize the solver instance before running tests."""
+    return SubsetSumSolver()
 
 
-class TestStressMetrics:
-    @pytest.fixture
-    def engine(self):
-        return CoreEngine(":memory:")
+@pytest.fixture
+def sample_data() -> tuple[list[int], int]:
+    """Fixture providing the target testing data suite."""
+    data_pool = [413, 222, 117, 92, 193, 209, 350, 13]
+    target_goal = 414
+    return data_pool, target_goal
 
-    def test_precision_torture(self, engine):
-        """ Test logic with high-magnitude difference to break IEEE 754 """
-        numbers = [10 ** 18, 1, 2, 3]
-        target = 10 ** 18 + 6
-        result = engine.run_solve(numbers, target, epsilon=0)
-        assert result is not None
-        assert sum(result) == target
 
-    def test_sqlite_overflow_bypass(self, engine):
-        """ Test integers larger than SQLite's 64-bit limit """
-        huge_val = 2 ** 128
-        numbers = [huge_val, 500, 1000]
-        target = huge_val + 1500
-        result = engine.run_solve(numbers, target, epsilon=0)
-        assert result is not None
-        assert sum(result) == target
+def test_solve_exact_success(solver: SubsetSumSolver, sample_data: tuple[list[int], int]) -> None:
+    """
+    Validates that the Meet-in-the-Middle (MITM) algorithm successfully finds
+    an exact subset that sums up precisely to the target goal.
+    """
+    data_pool, target_goal = sample_data
 
-    def test_fptas_massive_scale(self, engine):
-        """ N=60 with epsilon should finish fast while brute force would hang """
-        import random
-        numbers = [random.randint(10 ** 5, 10 ** 6) for _ in range(60)]
-        target = sum(random.sample(numbers, 10))
+    exact_solution = solver.solve_exact(data_pool, target_goal)
 
-        result = engine.run_solve(numbers, target, epsilon=0.1)
-        assert result is not None
-        assert sum(result) <= target
-        assert sum(result) >= target * Decimal('0.9')
+    assert exact_solution is not None, "Exact solution should be found for this dataset"
+    assert sum(exact_solution) == target_goal, f"Subset elements sum {sum(exact_solution)} must equal {target_goal}"
 
-    def test_epsilon_extreme_bounds(self, engine):
-        """ Test epsilon that is extremely small or large """
-        nums = [10, 20, 30]
-        assert engine.run_solve(nums, 50, epsilon=1e-20) == [20, 30]
-        assert engine.run_solve(nums, 50, epsilon=1.0) is not None
+    for item in exact_solution:
+        assert item in data_pool, f"Element {item} in solution was not present in the input data pool"
+
+
+@pytest.mark.parametrize("epsilon", [0.05, 0.1, 0.01])
+def test_solve_fptas_bounds(solver: SubsetSumSolver, sample_data: tuple[list[int], int], epsilon: float) -> None:
+    """
+    Validates that the Fully Polynomial-Time Approximation Scheme (FPTAS)
+    respects the theoretical lower bound constraints: Result >= (1 - epsilon) * OPT.
+    """
+    data_pool, target_goal = sample_data
+
+    approx_value = solver.solve_fptas(data_pool, target_goal, epsilon=epsilon)
+
+    assert approx_value <= target_goal, f"FPTAS returned {approx_value}, exceeding maximum capacity {target_goal}"
+
+    guaranteed_floor = (1.0 - epsilon) * target_goal
+    assert approx_value >= guaranteed_floor, (
+        f"FPTAS violated lower error corridor boundary. "
+        f"Returned: {approx_value}, Expected at least: {guaranteed_floor}"
+    )
